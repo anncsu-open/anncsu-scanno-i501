@@ -78,8 +78,9 @@ jobs:
             echo "previous=${{ steps.basename_files.outputs.previous }}" >> "$GITHUB_OUTPUT"
             echo "current=${{ steps.basename_files.outputs.current }}" >> "$GITHUB_OUTPUT"
           fi
+
       - name: Run geodiff between previous and current
-        id: geodiff
+        id: geodiffaction
         uses: geobeyond/geodiff-action@v0.0.0beta
         with:
           # expected inputs: left/right gpkg and output file
@@ -87,25 +88,29 @@ jobs:
           compare_file: ${{ steps.create_fake_previous_if_first.outputs.current }}
           output_format: "json"
 
-    #   - name: Upload geodiff artifact
-    #     uses: actions/upload-artifact@v4
-    #     with:
-    #       name: anncsu-geodiff
-    #       path: anncsu_changes.patch
+      # - name: Enable Debug Logging
+      #   run: |
+      #       echo "DEBUGGING_ENABLED=true" >> $GITHUB_ENV
+      #       echo "ACTIONS_RUNNER_DEBUG=true" >> $GITHUB_ENV
+      #       echo "ACTIONS_STEP_DEBUG=true" >> $GITHUB_ENV
 
-    #   - name: Notify anncsu API with changes
-    #     if: env.API_URL != '' && env.API_TOKEN != ''
-    #     env:
-    #       DIFF_RESULT: ${{ steps.geodiff.outputs.diff_result }}
-    #       HAS_CHANGES: ${{ steps.geodiff.outputs.has_changes }}
-    #     run: |
-    #       set -e
-    #       if [ ! -f anncsu_changes.patch ]; then
-    #         echo "No changes file found; exiting"
-    #         exit 0
-    #       fi
-    #       curl -sS -X POST "${API_URL}" \
-    #         -H "Authorization: Bearer ${API_TOKEN}" \
-    #         -H "Content-Type: application/octet-stream" \
-    #         --data-binary @anncsu_changes.patch
+      - name: Dump geodiff results to file
+        id: dump_geodiff_results
+        run: |
+          # NOTE: the diff_result output is a JSON string, so we need to write it
+          #       to a file as is without any additional formatting
+          #       need to use <<EOF to preserve double quotes in the JSON string
+          cat > geodiff_result.json <<EOF
+            ${{ steps.geodiffaction.outputs.diff_result }}
+          EOF
+
+      - name: Update ANNCSU with geodiff results
+        id: anncsu_update_from_geodiff
+        if:
+        #   env.API_URL != '' &&
+        #   env.API_TOKEN != '' &&
+          steps.geodiffaction.outputs.has_changes == 'true'
+        uses: geobeyond/anncsu-update-action@v0.0.0beta
+        with:
+          geodiff_report: geodiff_result.json
 
